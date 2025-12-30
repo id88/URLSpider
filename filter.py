@@ -53,6 +53,12 @@ class URLFilter:
         if not url or url.strip() == "":
             return False
         
+        url = url.strip()
+        
+        # URL 格式有效性检查
+        if not self._is_valid_url_format(url):
+            return False
+        
         # 规范化URL
         normalized_url = URLNormalizer.normalize(url, self.domain)
         if not normalized_url:
@@ -87,6 +93,30 @@ class URLFilter:
         # 检查包含模式
         if self.include_patterns and not self._matches_include_patterns(normalized_url):
             return False
+        
+        return True
+    
+    def _is_valid_url_format(self, url: str) -> bool:
+        """检查 URL 格式是否有效"""
+        # 排除过短的 URL
+        if len(url) < 3:
+            return False
+        
+        # 排除只包含特殊字符的 URL
+        if re.match(r'^[^a-zA-Z0-9/]+$', url):
+            return False
+        
+        # 必须包含至少一个字母或数字
+        if not re.search(r'[a-zA-Z0-9]', url):
+            return False
+        
+        # 检查是否为有效的 URL 格式
+        # 完整 URL 或相对路径
+        if not (url.startswith(('http://', 'https://', 'ftp://', '//', '/')) or 
+                re.match(r'^[a-zA-Z0-9_\-]+\.[a-zA-Z]{2,}', url)):
+            # 检查是否为相对路径文件
+            if not re.match(r'^\.{0,2}/?[a-zA-Z0-9_\-/]+\.[a-zA-Z]{1,10}', url):
+                return False
         
         return True
     

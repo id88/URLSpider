@@ -48,39 +48,32 @@ class URLNormalizer:
         # 去除两端的空白和引号
         url = url.strip().strip('"').strip("'")
         
-        # 如果URL以//开头，添加协议
-        if url.startswith('//'):
-            if base_url:
-                parsed_base = urlparse(base_url)
-                url = f"{parsed_base.scheme}:{url}"
-            else:
-                url = f"https:{url}"
+        # 黑名单检查
+        black_keywords = ['javascript:', 'mailto:', 'tel:', 'data:', 'blob:', 'about:']
+        if any(url.lower().startswith(keyword) for keyword in black_keywords):
+            return ""
         
-        # 如果URL没有协议但有域名
-        elif not url.startswith(('http://', 'https://', 'ftp://', 'ws://', 'wss://')):
-            if base_url and '://' not in url:
-                # 处理相对路径
-                if url.startswith('/'):
-                    parsed_base = urlparse(base_url)
-                    url = f"{parsed_base.scheme}://{parsed_base.netloc}{url}"
-                elif url.startswith('./'):
-                    parsed_base = urlparse(base_url)
-                    base_path = parsed_base.path.rsplit('/', 1)[0] if '/' in parsed_base.path else ''
-                    url = f"{parsed_base.scheme}://{parsed_base.netloc}{base_path}{url[1:]}"
-                elif url.startswith('../'):
-                    parsed_base = urlparse(base_url)
-                    parts = url.split('/')
-                    back_level = len([p for p in parts if p == '..'])
-                    path_parts = parsed_base.path.split('/')
-                    if back_level < len(path_parts):
-                        new_path = '/'.join(path_parts[:-back_level]) + '/' + '/'.join(parts[back_level:])
-                        url = f"{parsed_base.scheme}://{parsed_base.netloc}{new_path}"
-                else:
-                    parsed_base = urlparse(base_url)
-                    base_path = parsed_base.path if parsed_base.path.endswith('/') else parsed_base.path.rsplit('/', 1)[0]
-                    url = f"{parsed_base.scheme}://{parsed_base.netloc}{base_path}/{url}"
+        # 如果没有 base_url,只处理完整 URL
+        if not base_url:
+            if url.startswith(('http://', 'https://', 'ftp://')):
+                return URLNormalizer._normalize_components(url)
+            return ""
         
-        # 规范化URL组件
+        # 使用 urljoin 正确处理相对路径
+        # urljoin 会自动处理各种相对路径情况:
+        # - 绝对路径: /path -> http://domain/path
+        # - 相对路径: path -> http://domain/base/path
+        # - 上级路径: ../path -> http://domain/path
+        # - 协议相对: //domain/path -> http://domain/path
+        try:
+            absolute_url = urljoin(base_url, url)
+            return URLNormalizer._normalize_components(absolute_url)
+        except Exception:
+            return ""
+    
+    @staticmethod
+    def _normalize_components(url: str) -> str:
+        """规范化URL组件"""
         try:
             parsed = urlparse(url)
             
@@ -111,16 +104,8 @@ class URLNormalizer:
                     path_parts.append(part)
             path = '/'.join(path_parts)
             
-            # 移除查询参数中的重复和排序
+            # 保留原始查询参数,不进行过度规范化
             query = parsed.query
-            if query:
-                params = parse_qs(query, keep_blank_values=True)
-                # 移除空值参数
-                params = {k: v for k, v in params.items() if any(v)}
-                if params:
-                    query = urlencode(params, doseq=True)
-                else:
-                    query = ''
             
             # 重建URL
             normalized = urlunparse((
@@ -135,8 +120,8 @@ class URLNormalizer:
             return normalized
             
         except Exception as e:
-            print(f"Error normalizing URL {url}: {e}")
-            return url
+            # 如果规范化失败,返回空字符串而不是原始URL
+            return ""
     
     @staticmethod
     def get_domain(url: str) -> str:

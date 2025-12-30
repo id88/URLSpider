@@ -55,6 +55,14 @@ class URLExtractor:
         except Exception as e:
             print_warning(f"Error extracting URLs from HTML: {e}")
         
+        # 添加默认 favicon.ico (如果有 base_url)
+        if base_url:
+            from urllib.parse import urlparse
+            parsed = urlparse(base_url)
+            if parsed.scheme and parsed.netloc:
+                favicon_url = f"{parsed.scheme}://{parsed.netloc}/favicon.ico"
+                urls.add(favicon_url)
+        
         # 过滤URL
         filtered_urls = self.filter.filter_batch(list(urls))
         
@@ -122,12 +130,17 @@ class URLExtractor:
             matches = pattern.findall(content)
             for match in matches:
                 if isinstance(match, str):
-                    urls.add(match)
+                    # 简单字符串匹配
+                    url = match.strip().strip('"').strip("'")
+                    if url:
+                        urls.add(url)
                 elif isinstance(match, tuple):
                     # 如果正则中有分组，取第一个非空分组
                     for group in match:
                         if isinstance(group, str) and group.strip():
-                            urls.add(group.strip())
+                            url = group.strip().strip('"').strip("'")
+                            if url:
+                                urls.add(url)
                             break
         
         return list(urls)
@@ -143,7 +156,6 @@ class URLExtractor:
             tags_to_extract = {
                 'a': 'href',
                 'img': ['src', 'data-src'],
-                'link': 'href',
                 'script': 'src',
                 'iframe': 'src',
                 'form': 'action',
@@ -167,6 +179,21 @@ class URLExtractor:
                         url = element.get(attributes)
                         if url:
                             urls.add(url)
+            
+            # 特别处理 link 标签 (CSS 和 favicon)
+            link_tags = soup.find_all('link')
+            for link in link_tags:
+                href = link.get('href')
+                if href:
+                    # 提取所有 link 标签的 href
+                    urls.add(href)
+                    # 特别标记 CSS 和 favicon
+                    rel = link.get('rel')
+                    if rel:
+                        rel_str = ' '.join(rel) if isinstance(rel, list) else str(rel)
+                        # stylesheet, icon, shortcut icon 等都要提取
+                        if any(keyword in rel_str.lower() for keyword in ['stylesheet', 'icon']):
+                            urls.add(href)
             
             # 提取CSS背景图
             style_tags = soup.find_all('style')
